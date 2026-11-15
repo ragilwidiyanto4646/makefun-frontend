@@ -3,6 +3,17 @@
 
 import { date, esc, money, num, pct, short, takesEntries, timeLeft } from './format.js';
 
+/** An API-supplied link is only followed when it is an https: URL. Anything
+    else — notably a javascript: URL smuggled in through API data — falls
+    back to the given safe URL instead of becoming a clickable script. */
+const safeHttps = (url, fallback) => {
+  try {
+    return new URL(String(url)).protocol === 'https:' ? String(url) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 /** The reward as it stands now: the prize plus any entry fees paid into it. */
 const pot = (b) => money(b.potUsd ?? b.rewardAmount);
 
@@ -214,7 +225,7 @@ export function profile(p) {
     <p class="lede">@${esc(p.handle)}${p.joined_at ? ` · joined ${date(p.joined_at)}` : ''}</p>
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ''}
     <dl class="meta">
-      ${p.wallet?.address ? `<dt>Wallet</dt><dd><a href="${esc(p.wallet.explorer_url ?? `https://solscan.io/account/${p.wallet.address}`)}">${short(p.wallet.address)}</a></dd>` : ''}
+      ${p.wallet?.address ? `<dt>Wallet</dt><dd><a href="${esc(safeHttps(p.wallet.explorer_url, `https://solscan.io/account/${p.wallet.address}`))}">${esc(short(p.wallet.address))}</a></dd>` : ''}
       <dt>Entered</dt><dd>${num(record.competitions_entered)} ${record.competitions_entered === 1 ? 'bounty' : 'bounties'}</dd>
       <dt>Placed</dt><dd>${num(record.competitions_placed)}</dd>
       <dt>Won</dt><dd>${num(record.competitions_won)}</dd>
