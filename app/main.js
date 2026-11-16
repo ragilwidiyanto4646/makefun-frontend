@@ -10,7 +10,7 @@
 // screen, so a screenshot script knows when to capture.
 
 import { getBounties, getBounty, getLeaderboard, getProfile } from './api.js';
-import { board, bounty, error, leaderboard, loading, notFound, profile } from './views.js';
+import { board, bounty, error, leaderboard, leaderboardRows, loading, notFound, profile, ROW_H } from './views.js';
 
 const app = document.getElementById('app');
 
@@ -18,6 +18,8 @@ const app = document.getElementById('app');
     back to the board costs no second request. */
 const boardState = { items: [], cursor: null, page: 0, query: '' };
 let leaderboardPage = 0;
+let leaderboardData = null;
+let leaderboardSlug = '';
 
 function show(html, title) {
   app.innerHTML = html;
@@ -37,6 +39,8 @@ async function render() {
     if (lb) {
       const slug = decodeURIComponent(lb[1]);
       const data = await getLeaderboard(slug);
+      leaderboardData = data;
+      leaderboardSlug = slug;
       leaderboardPage = 0;
       show(leaderboard(data, slug, leaderboardPage), `${data.competition?.title ?? slug} leaderboard | make.fun bounties`);
     } else if (one) {
@@ -62,6 +66,18 @@ async function render() {
     show(error(e instanceof Error ? e.message : 'The request failed.'), 'Error | make.fun bounties');
   }
 }
+
+app.addEventListener('scroll', (event) => {
+  const scroller = event.target.closest?.('.lb-scroll');
+  if (!scroller || !leaderboardData) return;
+  const body = scroller.querySelector('tbody');
+  if (!body) return;
+  const pageLength = Number(body.dataset.pageLength) || 0;
+  const start = Math.max(0, Math.min(Math.max(0, pageLength - 30), Math.floor(scroller.scrollTop / ROW_H) - 7));
+  if (start === Number(body.dataset.windowStart || 0)) return;
+  body.innerHTML = leaderboardRows(leaderboardData, leaderboardPage, start);
+  body.dataset.windowStart = String(start);
+}, true);
 
 /** The board's filter, pager and "load more" work without a new page load:
     one delegated listener for the whole main element. */
@@ -105,7 +121,13 @@ app.addEventListener('click', async (event) => {
     if (location.hash.startsWith('#/bounty/')) {
       leaderboardPage = page;
       const slug = location.hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/)[1];
-      show(leaderboard(await getLeaderboard(decodeURIComponent(slug)), decodeURIComponent(slug), page), document.title);
+      if (leaderboardData && leaderboardSlug === decodeURIComponent(slug)) {
+        show(leaderboard(leaderboardData, leaderboardSlug, page), document.title);
+      } else {
+        leaderboardData = await getLeaderboard(decodeURIComponent(slug));
+        leaderboardSlug = decodeURIComponent(slug);
+        show(leaderboard(leaderboardData, leaderboardSlug, page), document.title);
+      }
     } else {
       boardState.page = page;
       show(board(boardState), 'make.fun bounties');

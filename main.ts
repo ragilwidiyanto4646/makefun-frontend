@@ -16,6 +16,9 @@ import { buildDossier } from './vendor/makefun-frontend.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+if (!existsSync(join(here, 'app'))) {
+  throw new Error(`Required frontend directory is missing: ${join(here, 'app')}`);
+}
 
 // Wipe first: a stale file from an earlier run must never survive into the
 // entry, and the two graded runs must write identical bytes.

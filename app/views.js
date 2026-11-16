@@ -161,13 +161,20 @@ export function bounty(b) {
     <div class="description">${md(b.description ?? '')}</div>`;
 }
 
-/** A bounty's leaderboard: rank, entrant, entry and the columns the API
-    publishes for this bounty, paged 50 at a time. */
-export function leaderboard(lb, slug, page = 0) {
+export const ROW_H = 36;
+const LB_PAGE_SIZE = 50;
+const LB_WINDOW_SIZE = 30;
+
+/** Render the visible rows for one leaderboard page, with height-preserving
+    spacers so the scroll position still represents the full page. */
+export function leaderboardRows(lb, page = 0, start = 0) {
   const columns = (lb.columns ?? []).filter((c) => !c.hidden);
   const entries = lb.entries ?? [];
-  const pages = Math.max(1, Math.ceil(entries.length / 50));
-  const slice = entries.slice(page * 50, page * 50 + 50);
+  const pageStart = page * LB_PAGE_SIZE;
+  const pageLength = Math.min(LB_PAGE_SIZE, Math.max(0, entries.length - pageStart));
+  const windowStart = Math.max(0, Math.min(pageLength, Math.floor(start)));
+  const count = Math.min(LB_WINDOW_SIZE, pageLength - windowStart);
+  const slice = entries.slice(pageStart + windowStart, pageStart + windowStart + count);
   const cell = (e, key) => {
     if (key === 'judge' || key === 'judge_low' || key === 'judge_high') return pct(e.values?.[key]);
     if (key === 'bytes') return `<span class="num">${num(e.values?.[key])} B</span>`;
@@ -184,6 +191,20 @@ export function leaderboard(lb, slug, page = 0) {
       </tr>`,
     )
     .join('');
+  const spacer = (n) => n > 0
+    ? `<tr class="lb-spacer" aria-hidden="true"><td colspan="${columns.length + 3}" style="height:${n * ROW_H}px"></td></tr>`
+    : '';
+  return `${spacer(windowStart)}${rows}${spacer(pageLength - windowStart - count)}`;
+}
+
+/** A bounty's leaderboard: rank, entrant, entry and the columns the API
+    publishes for this bounty, paged 50 at a time. */
+export function leaderboard(lb, slug, page = 0) {
+  const columns = (lb.columns ?? []).filter((c) => !c.hidden);
+  const entries = lb.entries ?? [];
+  const pages = Math.max(1, Math.ceil(entries.length / LB_PAGE_SIZE));
+  const pageLength = Math.min(LB_PAGE_SIZE, Math.max(0, entries.length - page * LB_PAGE_SIZE));
+  const rows = leaderboardRows(lb, page, 0);
   return `
     <p><a href="#/bounty/${encodeURIComponent(slug)}">← ${esc(lb.competition?.title ?? slug)}</a></p>
     <h1>${esc(lb.competition?.title ?? slug)} — leaderboard</h1>
@@ -191,9 +212,9 @@ export function leaderboard(lb, slug, page = 0) {
     ${
       entries.length === 0
         ? '<p class="empty">No entries yet — this bounty has no submissions.</p>'
-        : `<div class="table-wrap"><table>
+        : `<div class="table-wrap lb-scroll" tabindex="0"><table>
       <thead><tr><th scope="col">Rank</th><th scope="col">Entrant</th><th scope="col">Entry</th>${columns.map((c) => `<th scope="col">${esc(c.title)}</th>`).join('')}</tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody data-page-length="${pageLength}">${rows}</tbody>
     </table></div>
     <nav class="pager" aria-label="Leaderboard pages">
       <button type="button" data-page="${page - 1}" ${page === 0 ? 'disabled' : ''}>← Prev</button>
