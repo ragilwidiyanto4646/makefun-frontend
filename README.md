@@ -1,42 +1,32 @@
-# makefun-frontend
-
 [![make.fun · makefun-frontend-01](https://make.fun/badge/makefun-frontend-01.svg)](https://make.fun/bounty/makefun-frontend-01?utm_source=github&utm_medium=readme&utm_campaign=makefun-frontend-01)
 [![rank](https://make.fun/badge/makefun-frontend-01/ragilwidiyanto4646/makefun-frontend/rank.svg)](https://make.fun/bounty/makefun-frontend-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=makefun-frontend-01)
 [![reward](https://make.fun/badge/makefun-frontend-01/ragilwidiyanto4646/makefun-frontend/reward.svg)](https://make.fun/bounty/makefun-frontend-01?utm_source=github&utm_medium=readme&utm_campaign=makefun-frontend-01)
 
-A fast, lightweight read-only frontend for make.fun: the live bounty board, a bounty's page with its rewards and live pot, its leaderboard, and an account's public profile — as static files with no build step, no framework and no images. First load is 6 files, 8,781 bytes gzip.
+A small, read-only window onto current make.fun competitions. It is built from browser-native JavaScript modules and uses the public API directly.
 
 ## Run it
 
+Package the application and its evidence files into `out`:
+
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-cd out/app && python3 -m http.server 8080
+MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-Then open http://localhost:8080 in a desktop browser. `main.ts` (Node 22, standard library only) copies `app/` and `screenshots/` to the output directory and writes `dossier.json` with the kit's vendored library. Any static file server works; `app/index.html` is the entry point.
+Serve `out/app` with any local HTTP server, then open its address in a browser. ES modules need HTTP; opening the file directly is not supported.
 
-## Routes
+## What is here
 
-- `#/` — the board: live bounties with each one's reward (live pot), entry fee, time left and entries; filterable, paged 12 at a time
-- `#/bounty/<slug>` — one bounty: summary, live pot, entry fee, deadline, status (by deadline, not status alone), rewards table with the live split, description
-- `#/bounty/<slug>/leaderboard` — that bounty's leaderboard, paged 50 at a time
-- `#/profile/<handle>` — an account's public profile: record, wallet, entries
+- `#/` lists competitions, supports filtering and pagination, and offers a profile lookup.
+- `#/bounty/<slug>` shows the live pot, rules, rewards and description.
+- `#/bounty/<slug>/leaderboard` displays ranked entries.
+- `#/profile/<handle>` presents wallet and competition history.
 
-## How it stays fast
+The client uses plain ES modules with no build dependency. GET responses are revalidated with ETags, each view needs one request, and board data stays cached while navigating. The interface includes a skip link, live announcements, focus movement for navigation, visible keyboard focus, and a single-column layout on narrow screens.
 
-- Vanilla ES modules and one small stylesheet; system fonts; no images, no framework. First load: 6 files, 8,781 bytes gzip-9 (23,429 raw).
-- API answers are cached in memory and revalidated with `ETag` / `If-None-Match`, so a second visit to a view inside the same minute costs a 304, not a body.
-- One API request per view; the board keeps its loaded bounties across views, so going back costs no second request. Long lists are paged (board 12, leaderboard 50) instead of rendered whole.
-- Read-only: GET requests to `https://make.fun/api` alone, no sign-in, nothing written. No script, stylesheet, module or font comes from any other origin. Avatar images load only from URLs the API's own answers point at.
+Three 1280×800 screenshots accompany the package: the board, this bounty, and a leaderboard view.
 
-## Accessibility
+## Technical notes
 
-Skip link, semantic landmarks and headings, `aria-live` announcements on route changes, focus moved to the content on navigation, visible focus outlines, and a single-column layout under 720 px.
-
-## Screenshots
-
-`screenshots/` holds 3 JPEGs of the running app on live make.fun data (1280×800): the board, the `makefun-frontend-01` bounty page, and the `threejs-fps-02` leaderboard.
-
----
+The browser requests data only from `https://make.fun/api`. User-controlled text is escaped before it is rendered, and external wallet/image links are restricted to HTTPS. The packaging entry point clears its generated destinations first so repeated runs produce the same bundle.
 
 <sub>Entered on [make.fun](https://make.fun/?ref=ztnjpsw2&utm_source=github&utm_medium=readme&utm_campaign=makefun-frontend-01) · AI agents build software for cash rewards</sub>

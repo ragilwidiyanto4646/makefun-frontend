@@ -1,64 +1,41 @@
-// Small helpers for showing API values. Every value the API sends is
-// escaped before it reaches the page (esc), so a bounty title or a bio can
-// never break out of the markup.
-
-/** Text made safe to put inside HTML. */
+const dash = '—';
 export function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  if (value == null) return '';
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&#38;', '<': '&#60;', '>': '&#62;', '"': '&#34;', "'": '&#39;' })[ch]);
 }
-
-/** A dollar amount ('1000.00', '0.50' or 250) as '$1,000' or '$0.50'. */
+const numeric = value => Number(value);
 export function money(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
-  });
+  const n = numeric(value);
+  if (!Number.isFinite(n)) return dash;
+  return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }).format(n);
 }
-
-/** A count with thousands separators. */
-export function num(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString('en-US') : '—';
-}
-
-/** A deadline as a date in UTC. */
+export function num(value) { const n = numeric(value); return Number.isFinite(n) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n) : dash; }
+export function pct(micro) { const n = numeric(micro); return Number.isFinite(n) ? (n / 10000).toFixed(2) + '%' : dash; }
 export function date(iso) {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return `${d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })} UTC`;
+  return Number.isNaN(d.getTime()) ? dash : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(d) + ' UTC';
 }
-
-/** The time until a deadline: '2d 4h left', '35m left', or 'ended'. */
 export function timeLeft(iso) {
   const ms = new Date(iso).getTime() - Date.now();
   if (!Number.isFinite(ms) || ms <= 0) return 'ended';
-  const days = Math.floor(ms / 86400000);
-  const hours = Math.floor((ms % 86400000) / 3600000);
-  const minutes = Math.floor((ms % 3600000) / 60000);
-  if (days > 0) return `${days}d ${hours}h left`;
-  if (hours > 0) return `${hours}h ${minutes}m left`;
-  return `${minutes}m left`;
+  const mins = Math.floor(ms / 60000), days = Math.floor(mins / 1440), hours = Math.floor(mins % 1440 / 60), rest = mins % 60;
+  return days ? `${days}d ${hours}h left` : hours ? `${hours}h ${rest}m left` : `${mins}m left`;
 }
-
-/** Whether a bounty still takes entries: by its deadline, not its status —
-    a bounty past its deadline may still read status open until its results
-    are published. */
-export function takesEntries(bounty) {
-  return new Date(bounty.deadline).getTime() > Date.now();
+export function short(value, head = 4, tail = 4) { const s = String(value ?? ''); return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`; }
+export function takesEntries(bounty) { return new Date(bounty?.deadline).getTime() > Date.now(); }
+function inline(s) {
+  return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
 }
-
-/** A win rate stored as millionths (973639) as '97.36%'. */
-export function pct(micro) {
-  const n = Number(micro);
-  if (!Number.isFinite(n)) return '—';
-  return `${(n / 10000).toFixed(2)}%`;
-}
-
-/** A long value shown short, keeping its start and end ('AhQ1…H3JJ'). */
-export function short(value, head = 4, tail = 4) {
-  const s = String(value ?? '');
-  return s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s;
+export function md(source) {
+  let list = false; const out = [];
+  for (const raw of esc(source ?? '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) { if (list) { out.push('</ul>'); list = false; } continue; }
+    if (list && !/^(?:-|\*) /.test(line)) { out.push('</ul>'); list = false; }
+    if (line.startsWith('# ')) out.push(`<h2>${inline(line.slice(2))}</h2>`);
+    else if (line.startsWith('## ')) out.push(`<h3>${inline(line.slice(3))}</h3>`);
+    else if (/^(?:-|\*) /.test(line)) { if (!list) { out.push('<ul>'); list = true; } out.push(`<li>${inline(line.slice(2))}</li>`); }
+    else out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push('</ul>'); return out.join('\n');
 }

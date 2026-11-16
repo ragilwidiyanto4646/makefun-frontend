@@ -1,155 +1,20 @@
-import { getBounties, getBounty, getLeaderboard, getProfile } from './api.js';
-import { board, bounty, error, leaderboard, leaderboardRows, loading, notFound, profile, ROW_H } from './views.js';
-
-const app = document.getElementById('app');
-const boardState = { items: [], cursor: null, page: 0, query: '' };
-let leaderboardData = null;
-let leaderboardSlug = '';
-let leaderboardPage = 0;
-let renderToken = 0;
-
-function show(html, title) {
-  app.innerHTML = html;
-  document.title = title;
-  window.scrollTo(0, 0);
-  app.focus({ preventScroll: true });
-  window.__shotReady = true;
-}
-
-async function render() {
-  const token = ++renderToken;
-  window.__shotReady = false;
-  const hash = location.hash || '#/';
-  try {
-    const lbRoute = hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/);
-    const bountyRoute = hash.match(/^#\/bounty\/([^/]+)$/);
-    const profileRoute = hash.match(/^#\/profile\/([^/]+)$/);
-    if (lbRoute) {
-      const slug = decodeURIComponent(lbRoute[1]);
-      app.innerHTML = loading();
-      const data = await getLeaderboard(slug);
-      if (token !== renderToken) return;
-      leaderboardData = data;
-      leaderboardSlug = slug;
-      leaderboardPage = 0;
-      show(leaderboard(data, slug, 0), `${data.competition?.title ?? slug} leaderboard | make.fun bounties`);
-      return;
-    }
-    if (bountyRoute) {
-      const slug = decodeURIComponent(bountyRoute[1]);
-      app.innerHTML = loading();
-      const data = await getBounty(slug);
-      if (token !== renderToken) return;
-      if (!data || data.slug == null) {
-        show(notFound(`Bounty ${slug}`), 'Not found | make.fun bounties');
-      } else {
-        show(bounty(data), `${data.title} | make.fun bounties`);
-      }
-      return;
-    }
-    if (profileRoute) {
-      const handle = decodeURIComponent(profileRoute[1]);
-      app.innerHTML = loading();
-      const data = await getProfile(handle);
-      if (token !== renderToken) return;
-      if (!data || data.handle == null) {
-        show(notFound(`Profile @${handle}`), 'Not found | make.fun bounties');
-      } else {
-        show(profile(data), `@${data.handle} | make.fun bounties`);
-      }
-      return;
-    }
-    if (boardState.items.length === 0) {
-      app.innerHTML = loading();
-      const data = await getBounties();
-      if (token !== renderToken) return;
-      boardState.items = data.items ?? [];
-      boardState.cursor = data.next_cursor ?? null;
-    }
-    show(board(boardState), 'make.fun bounties');
-  } catch (cause) {
-    if (token !== renderToken) return;
-    show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
-  }
-}
-
-app.addEventListener('scroll', (event) => {
-  const scroller = event.target.closest?.('.lb-scroll');
-  if (!scroller || !leaderboardData || leaderboardSlug === '') return;
-  const body = scroller.querySelector('tbody');
-  if (!body) return;
-  const length = Number(body.dataset.pageLength) || 0;
-  const maxStart = Math.max(0, length - 30);
-  const start = Math.max(0, Math.min(maxStart, Math.floor(scroller.scrollTop / ROW_H) - 7));
-  if (start === Number(body.dataset.windowStart || 0)) return;
-  body.innerHTML = leaderboardRows(leaderboardData, leaderboardPage, start);
-  body.dataset.windowStart = String(start);
-}, true);
-
-app.addEventListener('input', (event) => {
-  if (event.target.id !== 'board-filter') return;
-  boardState.query = event.target.value;
-  boardState.page = 0;
-  const oldList = app.querySelector('.board');
-  const oldPager = app.querySelector('.pager');
-  if (!oldList || !oldPager) return;
-  const fragment = document.createElement('div');
-  fragment.innerHTML = board(boardState);
-  oldList.replaceWith(fragment.querySelector('.board'));
-  oldPager.replaceWith(fragment.querySelector('.pager'));
-  const filter = document.getElementById('board-filter');
-  filter.focus();
-  filter.setSelectionRange(filter.value.length, filter.value.length);
-});
-
-app.addEventListener('click', async (event) => {
-  const button = event.target.closest?.('button[data-page], button[data-more]');
-  if (!button || button.disabled) return;
-  if (button.hasAttribute('data-more')) {
-    button.disabled = true;
-    button.textContent = 'Loading…';
-    try {
-      const next = await getBounties(boardState.cursor);
-      boardState.items = boardState.items.concat(next.items ?? []);
-      boardState.cursor = next.next_cursor ?? null;
-      show(board(boardState), 'make.fun bounties');
-    } catch (cause) {
-      show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
-    }
-    return;
-  }
-  const requested = Number(button.dataset.page);
-  if (!Number.isInteger(requested) || requested < 0) return;
-  if (location.hash.startsWith('#/bounty/')) {
-    const route = location.hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/);
-    if (!route) return;
-    leaderboardPage = requested;
-    const slug = decodeURIComponent(route[1]);
-    try {
-      if (!leaderboardData || leaderboardSlug !== slug) {
-        app.innerHTML = loading();
-        leaderboardData = await getLeaderboard(slug);
-        leaderboardSlug = slug;
-      }
-      show(leaderboard(leaderboardData, slug, requested), `${leaderboardData.competition?.title ?? slug} leaderboard | make.fun bounties`);
-    } catch (cause) {
-      show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
-    }
-  } else {
-    boardState.page = requested;
-    show(board(boardState), 'make.fun bounties');
-  }
-});
-
-app.addEventListener('submit', (event) => {
-  if (event.target.id === 'profile-lookup') {
-    event.preventDefault();
-    const handle = document.getElementById('profile-handle').value.trim();
-    if (handle) location.hash = `#/profile/${encodeURIComponent(handle)}`;
-  } else if (event.target.id === 'board-tools') {
-    event.preventDefault();
-  }
-});
-
-window.addEventListener('hashchange', render);
-render();
+import { getBounties,getBounty,getLeaderboard,getProfile } from './api.js';
+import { board,bounty,leaderboard,profile,loading,error,notFound,leaderboardRows,ROW_H } from './views.js';
+const root=document.querySelector('#app');
+const state={items:[],cursor:null,query:'',page:0};
+let lbState=null, renderToken=0;
+window.__shotReady=false;
+function decode(part){try{return decodeURIComponent(part)}catch{throw new Error('The address contains invalid percent-encoding.')}}
+function route(){const raw=location.hash.slice(1)||'/', bits=raw.split('/').filter(Boolean).map(decode); if(!bits.length)return {kind:'board'}; if(bits[0]==='bounty'&&bits[1]&&bits[2]==='leaderboard')return {kind:'leaderboard',slug:bits[1]};if(bits[0]==='bounty'&&bits[1])return {kind:'bounty',slug:bits[1]};if(bits[0]==='profile'&&bits[1])return {kind:'profile',handle:bits[1]};return {kind:'missing',what:raw};}
+function ready(html,title){root.innerHTML=html;document.title=`${title} · make.fun bounties`;window.__shotReady=true;root.focus({preventScroll:true});}
+async function render(){const token=++renderToken;window.__shotReady=false;let r;root.innerHTML=loading();try{r=route();
+ if(r.kind==='board'){if(!state.items.length){const data=await getBounties();state.items=data.items??data.competitions??[];state.cursor=data.next_cursor??data.cursor??null;}if(token!==renderToken)return;ready(board(state),'Open bounties');bindBoard();}
+ else if(r.kind==='bounty'){const b=await getBounty(r.slug);if(token!==renderToken)return;ready(bounty(b.competition??b),b.title??b.competition?.title??r.slug);}
+ else if(r.kind==='leaderboard'){const lb=await getLeaderboard(r.slug);if(token!==renderToken)return;lbState={lb,slug:r.slug,page:0};ready(leaderboard(lb,r.slug,0),`${lb.title??r.slug} leaderboard`);bindLb();}
+ else if(r.kind==='profile'){const p=await getProfile(r.handle);if(token!==renderToken)return;ready(profile(p.profile??p),p.display_name??r.handle);}
+ else {ready(notFound(r.what),'Not found');}
+ }catch(e){if(token===renderToken)ready(error(e.message),'Error');}}
+function bindBoard(){const input=document.querySelector('#board-filter');input?.addEventListener('input',()=>{const pos=input.selectionStart;state.query=input.value;state.page=0;const html=board(state);const tmp=document.createElement('div');tmp.innerHTML=html;document.querySelector('.lede').after(tmp.querySelector('.tools'));document.querySelector('.board').replaceWith(tmp.querySelector('.board'));document.querySelector('.pager').replaceWith(tmp.querySelector('.pager'));const next=document.querySelector('#board-filter');next.focus();next.setSelectionRange(pos,pos);bindBoard();});document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>{state.page=Number(b.dataset.page);ready(board(state),'Open bounties');bindBoard();}));document.querySelector('[data-more]')?.addEventListener('click',async()=>{try{const d=await getBounties(state.cursor);state.items.push(...(d.items??d.competitions??[]));state.cursor=d.next_cursor??d.cursor??null;ready(board(state),'Open bounties');bindBoard()}catch(e){ready(error(e.message),'Error')}});document.querySelector('#profile-lookup')?.addEventListener('submit',e=>{e.preventDefault();const h=document.querySelector('#profile-handle').value.trim();if(h)location.hash=`#/profile/${encodeURIComponent(h)}`;});}
+function updateWindow(){const wrap=document.querySelector('.lb-scroll'),body=wrap?.querySelector('tbody');if(!wrap||!body||!lbState)return;const length=Number(body.dataset.pageLength), maxScroll=Math.max(0,wrap.scrollHeight-wrap.clientHeight);if(wrap.scrollTop>maxScroll)wrap.scrollTop=maxScroll;const start=Math.max(0,Math.min(Math.max(0,length-30),Math.floor(wrap.scrollTop/ROW_H)-7));body.innerHTML=leaderboardRows(lbState.lb,lbState.page,start);body.dataset.windowStart=String(start);}
+function bindLb(){const wrap=document.querySelector('.lb-scroll');wrap?.addEventListener('scroll',updateWindow,{passive:true});window.addEventListener('resize',updateWindow);document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>{lbState.page=Number(b.dataset.page);ready(leaderboard(lbState.lb,lbState.slug,lbState.page),`${lbState.slug} leaderboard`);bindLb();}));}
+window.addEventListener('hashchange',render);render();
