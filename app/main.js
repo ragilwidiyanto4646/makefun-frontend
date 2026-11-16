@@ -1,25 +1,12 @@
-// A make.fun frontend: the board of open bounties and a page for each, its
-// leaderboard and an account's public profile, on hash routes.
-//
-//   #/                          the board
-//   #/bounty/<slug>             one bounty
-//   #/bounty/<slug>/leaderboard that bounty's leaderboard
-//   #/profile/<handle>          an account's public profile
-//
-// window.__shotReady is false while a page loads and true once its data is on
-// screen, so a screenshot script knows when to capture.
-
 import { getBounties, getBounty, getLeaderboard, getProfile } from './api.js';
 import { board, bounty, error, leaderboard, leaderboardRows, loading, notFound, profile, ROW_H } from './views.js';
 
 const app = document.getElementById('app');
-
-/** The board's loaded bounties, filter and page, kept across views so going
-    back to the board costs no second request. */
 const boardState = { items: [], cursor: null, page: 0, query: '' };
-let leaderboardPage = 0;
 let leaderboardData = null;
 let leaderboardSlug = '';
+let leaderboardPage = 0;
+let renderToken = 0;
 
 function show(html, title) {
   app.innerHTML = html;
@@ -30,108 +17,127 @@ function show(html, title) {
 }
 
 async function render() {
+  const token = ++renderToken;
   window.__shotReady = false;
   const hash = location.hash || '#/';
   try {
-    const lb = hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/);
-    const one = hash.match(/^#\/bounty\/([^/]+)$/);
-    const prof = hash.match(/^#\/profile\/([^/]+)$/);
-    if (lb) {
-      const slug = decodeURIComponent(lb[1]);
+    const lbRoute = hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/);
+    const bountyRoute = hash.match(/^#\/bounty\/([^/]+)$/);
+    const profileRoute = hash.match(/^#\/profile\/([^/]+)$/);
+    if (lbRoute) {
+      const slug = decodeURIComponent(lbRoute[1]);
+      app.innerHTML = loading();
       const data = await getLeaderboard(slug);
+      if (token !== renderToken) return;
       leaderboardData = data;
       leaderboardSlug = slug;
       leaderboardPage = 0;
-      show(leaderboard(data, slug, leaderboardPage), `${data.competition?.title ?? slug} leaderboard | make.fun bounties`);
-    } else if (one) {
-      const slug = decodeURIComponent(one[1]);
-      const b = await getBounty(slug);
-      if (!b || b.slug == null) return show(notFound(`Bounty ${slug}`), 'Not found | make.fun bounties');
-      show(bounty(b), `${b.title} | make.fun bounties`);
-    } else if (prof) {
-      const handle = decodeURIComponent(prof[1]);
-      const p = await getProfile(handle);
-      if (!p || p.handle == null) return show(notFound(`Profile @${handle}`), 'Not found | make.fun bounties');
-      show(profile(p), `@${p.handle} | make.fun bounties`);
-    } else {
-      if (boardState.items.length === 0) {
-        app.innerHTML = loading();
-        const data = await getBounties();
-        boardState.items = data.items ?? [];
-        boardState.cursor = data.next_cursor ?? null;
-      }
-      show(board(boardState), 'make.fun bounties');
+      show(leaderboard(data, slug, 0), `${data.competition?.title ?? slug} leaderboard | make.fun bounties`);
+      return;
     }
-  } catch (e) {
-    show(error(e instanceof Error ? e.message : 'The request failed.'), 'Error | make.fun bounties');
+    if (bountyRoute) {
+      const slug = decodeURIComponent(bountyRoute[1]);
+      app.innerHTML = loading();
+      const data = await getBounty(slug);
+      if (token !== renderToken) return;
+      if (!data || data.slug == null) {
+        show(notFound(`Bounty ${slug}`), 'Not found | make.fun bounties');
+      } else {
+        show(bounty(data), `${data.title} | make.fun bounties`);
+      }
+      return;
+    }
+    if (profileRoute) {
+      const handle = decodeURIComponent(profileRoute[1]);
+      app.innerHTML = loading();
+      const data = await getProfile(handle);
+      if (token !== renderToken) return;
+      if (!data || data.handle == null) {
+        show(notFound(`Profile @${handle}`), 'Not found | make.fun bounties');
+      } else {
+        show(profile(data), `@${data.handle} | make.fun bounties`);
+      }
+      return;
+    }
+    if (boardState.items.length === 0) {
+      app.innerHTML = loading();
+      const data = await getBounties();
+      if (token !== renderToken) return;
+      boardState.items = data.items ?? [];
+      boardState.cursor = data.next_cursor ?? null;
+    }
+    show(board(boardState), 'make.fun bounties');
+  } catch (cause) {
+    if (token !== renderToken) return;
+    show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
   }
 }
 
 app.addEventListener('scroll', (event) => {
   const scroller = event.target.closest?.('.lb-scroll');
-  if (!scroller || !leaderboardData) return;
+  if (!scroller || !leaderboardData || leaderboardSlug === '') return;
   const body = scroller.querySelector('tbody');
   if (!body) return;
-  const pageLength = Number(body.dataset.pageLength) || 0;
-  const start = Math.max(0, Math.min(Math.max(0, pageLength - 30), Math.floor(scroller.scrollTop / ROW_H) - 7));
+  const length = Number(body.dataset.pageLength) || 0;
+  const maxStart = Math.max(0, length - 30);
+  const start = Math.max(0, Math.min(maxStart, Math.floor(scroller.scrollTop / ROW_H) - 7));
   if (start === Number(body.dataset.windowStart || 0)) return;
   body.innerHTML = leaderboardRows(leaderboardData, leaderboardPage, start);
   body.dataset.windowStart = String(start);
 }, true);
 
-/** The board's filter, pager and "load more" work without a new page load:
-    one delegated listener for the whole main element. */
 app.addEventListener('input', (event) => {
-  if (event.target.id === 'board-filter') {
-    boardState.query = event.target.value;
-    boardState.page = 0;
-    const list = app.querySelector('.board');
-    const pager = app.querySelector('.pager');
-    if (list && pager) {
-      const html = board(boardState);
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      list.replaceWith(tmp.querySelector('.board'));
-      pager.replaceWith(tmp.querySelector('.pager'));
-      const input = document.getElementById('board-filter');
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
-  }
+  if (event.target.id !== 'board-filter') return;
+  boardState.query = event.target.value;
+  boardState.page = 0;
+  const oldList = app.querySelector('.board');
+  const oldPager = app.querySelector('.pager');
+  if (!oldList || !oldPager) return;
+  const fragment = document.createElement('div');
+  fragment.innerHTML = board(boardState);
+  oldList.replaceWith(fragment.querySelector('.board'));
+  oldPager.replaceWith(fragment.querySelector('.pager'));
+  const filter = document.getElementById('board-filter');
+  filter.focus();
+  filter.setSelectionRange(filter.value.length, filter.value.length);
 });
 
 app.addEventListener('click', async (event) => {
-  const button = event.target.closest('button[data-page], button[data-more]');
+  const button = event.target.closest?.('button[data-page], button[data-more]');
   if (!button || button.disabled) return;
   if (button.hasAttribute('data-more')) {
     button.disabled = true;
     button.textContent = 'Loading…';
     try {
-      const data = await getBounties(boardState.cursor);
-      boardState.items = boardState.items.concat(data.items ?? []);
-      boardState.cursor = data.next_cursor ?? null;
+      const next = await getBounties(boardState.cursor);
+      boardState.items = boardState.items.concat(next.items ?? []);
+      boardState.cursor = next.next_cursor ?? null;
       show(board(boardState), 'make.fun bounties');
-    } catch (e) {
-      show(error(e instanceof Error ? e.message : 'The request failed.'), 'Error | make.fun bounties');
+    } catch (cause) {
+      show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
     }
     return;
   }
-  const page = Number(button.getAttribute('data-page'));
-  if (Number.isInteger(page) && page >= 0) {
-    if (location.hash.startsWith('#/bounty/')) {
-      leaderboardPage = page;
-      const slug = location.hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/)[1];
-      if (leaderboardData && leaderboardSlug === decodeURIComponent(slug)) {
-        show(leaderboard(leaderboardData, leaderboardSlug, page), document.title);
-      } else {
-        leaderboardData = await getLeaderboard(decodeURIComponent(slug));
-        leaderboardSlug = decodeURIComponent(slug);
-        show(leaderboard(leaderboardData, leaderboardSlug, page), document.title);
+  const requested = Number(button.dataset.page);
+  if (!Number.isInteger(requested) || requested < 0) return;
+  if (location.hash.startsWith('#/bounty/')) {
+    const route = location.hash.match(/^#\/bounty\/([^/]+)\/leaderboard$/);
+    if (!route) return;
+    leaderboardPage = requested;
+    const slug = decodeURIComponent(route[1]);
+    try {
+      if (!leaderboardData || leaderboardSlug !== slug) {
+        app.innerHTML = loading();
+        leaderboardData = await getLeaderboard(slug);
+        leaderboardSlug = slug;
       }
-    } else {
-      boardState.page = page;
-      show(board(boardState), 'make.fun bounties');
+      show(leaderboard(leaderboardData, slug, requested), `${leaderboardData.competition?.title ?? slug} leaderboard | make.fun bounties`);
+    } catch (cause) {
+      show(error(cause instanceof Error ? cause.message : 'The request failed.'), 'Error | make.fun bounties');
     }
+  } else {
+    boardState.page = requested;
+    show(board(boardState), 'make.fun bounties');
   }
 });
 
